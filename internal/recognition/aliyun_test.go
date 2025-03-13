@@ -30,22 +30,8 @@ func TestAliyunClient(t *testing.T) {
 		t.Skip("缺少阿里云配置，跳过测试")
 	}
 
-	// 创建识别配置
-	recogConfig := &RecognitionConfig{
-		Format:     "pcm",
-		SampleRate: 16000,
-		EnableITN:  true,
-	}
-
 	// 创建客户端
-	client := NewAliyunClient(config, recogConfig)
-
-	// 连接服务
-	err = client.Connect()
-	if err != nil {
-		t.Fatalf("连接失败: %v", err)
-	}
-	defer client.Close()
+	client := NewAliyunClient(config, DefaultStartParam())
 
 	// 开始识别
 	err = client.StartRecognition()

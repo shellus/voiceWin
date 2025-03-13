@@ -50,7 +50,7 @@ func (ac *AudioCapture) Start() error {
 		volume := ac.processor.ProcessAudio(pSample, framecount)
 
 		// 只在音量变化时触发回调
-		if ac.OnVolumeChange != nil && math.Abs(volume-ac.lastVolume) > 1.0 {
+		if ac.OnVolumeChange != nil && math.Abs(volume-ac.lastVolume) > 20 {
 			ac.OnVolumeChange(volume)
 			ac.lastVolume = volume
 		}
@@ -80,21 +80,31 @@ func (ac *AudioCapture) Start() error {
 	return nil
 }
 
-// Stop 停止捕获音频
+// Stop 停止音频捕获，但保持资源不释放，可以再次Start
 func (ac *AudioCapture) Stop() error {
 	if ac.device != nil {
-		ac.device.Uninit()
-		ac.device = nil
+		// 只停止设备，不释放
+		if err := ac.device.Stop(); err != nil {
+			return fmt.Errorf("停止设备失败: %w", err)
+		}
 	}
 	return nil
 }
 
-// Close 关闭音频捕获器
+// Close 完全关闭音频捕获器，释放所有资源
 func (ac *AudioCapture) Close() error {
+	// 先停止捕获
 	if err := ac.Stop(); err != nil {
 		return err
 	}
 
+	// 释放设备资源
+	if ac.device != nil {
+		ac.device.Uninit()
+		ac.device = nil
+	}
+
+	// 释放上下文资源
 	if ac.context != nil {
 		if err := ac.context.Uninit(); err != nil {
 			return fmt.Errorf("关闭上下文失败: %w", err)
@@ -102,6 +112,12 @@ func (ac *AudioCapture) Close() error {
 		ac.context.Free()
 		ac.context = nil
 	}
+
+	// 清空回调和状态
+	ac.OnVolumeChange = nil
+	ac.OnAudioData = nil
+	ac.OnError = nil
+	ac.processor = nil
 
 	return nil
 }

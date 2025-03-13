@@ -11,6 +11,32 @@ import (
 	"github.com/shellus/voiceWin/internal/recognition"
 )
 
+var stopChan = make(chan os.Signal, 1)
+var doneChan = make(chan struct{})
+
+func chanWait(completeChan <-chan string, errorChan <-chan error) {
+	for {
+		select {
+		case result := <-completeChan:
+			onResult(result)
+			return
+		case err := <-errorChan:
+			onError(err)
+			return
+		}
+	}
+}
+
+func onResult(result string) {
+	fmt.Printf("\n识别结果: %s\n", result)
+	close(doneChan)
+}
+
+func onError(err error) {
+	log.Printf("\n错误: %v\n", err)
+	close(doneChan)
+}
+
 func main() {
 	// 加载环境变量
 	if err := godotenv.Load(); err != nil {
@@ -30,27 +56,18 @@ func main() {
 		Region:          os.Getenv("ALIYUN_REGION"),
 	}
 
-	recogCfg := &recognition.RecognitionConfig{
-		Format:            "pcm",
-		SampleRate:        16000,
-		EnablePunctuation: true,
-		EnableITN:         true,
+	// 1. 初始化阿里云客户端
+	aliyunClient, err := recognition.NewAliyunClient(aliyunCfg, recognition.DefaultStartParam())
+	if err != nil {
+		log.Fatalf("初始化阿里云客户端失败: %v", err)
 	}
 
-	// 初始化阿里云客户端
-	aliyunClient := recognition.NewAliyunClient(aliyunCfg, recogCfg)
-
-	// 连接到阿里云服务
-	if err := aliyunClient.Connect(); err != nil {
-		log.Fatalf("连接到阿里云服务失败: %v", err)
-	}
-	defer aliyunClient.Close()
-
-	// 启动语音识别
+	// 2. 启动语音识别
 	if err := aliyunClient.StartRecognition(); err != nil {
 		log.Fatalf("启动语音识别失败: %v", err)
 	}
 
+	// 3. 启动音频捕获
 	audioCapture.OnVolumeChange = func(volume float64) {
 		fmt.Printf("\r音量: %f", volume)
 	}
@@ -64,39 +81,42 @@ func main() {
 			log.Printf("发送音频数据失败: %v", err)
 		}
 	}
-
-	// 启动音频捕获
 	if err := audioCapture.Start(); err != nil {
 		log.Fatalf("启动音频捕获失败: %v", err)
 	}
 
 	fmt.Println("开始录音...按 Ctrl+C 停止")
 
-	// 创建通道用于接收识别结果
-	resultChan := aliyunClient.GetResultChannel()
-	errorChan := aliyunClient.GetErrorChannel()
+	go chanWait(aliyunClient.GetCompleteChannel(), aliyunClient.GetErrorChannel())
 
-	// 启动识别结果处理协程
-	go func() {
-		for {
-			select {
-			case result := <-resultChan:
-				fmt.Printf("\n识别结果: %s\n", result)
-			case err := <-errorChan:
-				log.Printf("\n错误: %v\n", err)
-			}
+	// 注意，退出分为3种情况：
+	// 1. 识别完成：触发onResult，关闭doneChan，执行ShutdownRecognition
+	// 2. 识别失败：触发onError，关闭doneChan，执行ShutdownRecognition
+	// 3. Ctrl+C：执行StopRecognition，等待doneChan，然后执行ShutdownRecognition
+
+	signal.Notify(stopChan, os.Interrupt)
+	select {
+	case <-doneChan:
+		// 识别完成或失败，直接关闭
+		fmt.Println("\n正在关闭...")
+		aliyunClient.ShutdownRecognition()
+		audioCapture.Close()
+	case <-stopChan:
+		fmt.Println("\n正在停止识别...")
+		// 先停止音频捕获
+		if err := audioCapture.Stop(); err != nil {
+			log.Printf("停止音频捕获失败: %v", err)
 		}
-	}()
-
-	// 等待中断信号
-	signalChan := make(chan os.Signal, 1)
-	signal.Notify(signalChan, os.Interrupt)
-	<-signalChan
-
-	fmt.Println("\n正在关闭程序...")
-
-	// 停止语音识别
-	if err := aliyunClient.StopRecognition(); err != nil {
-		log.Printf("停止语音识别失败: %v", err)
+		// 停止识别并等待完成
+		if err := aliyunClient.StopRecognition(); err != nil {
+			log.Printf("停止识别失败: %v", err)
+		}
+		// 等待识别完成或失败
+		// 因为select已经进入了case <-stopChan，所以我们这里需要手动等待doneChan
+		<-doneChan
+		fmt.Println("\n正在关闭...")
+		// 完全关闭
+		aliyunClient.ShutdownRecognition()
+		audioCapture.Close()
 	}
 }
