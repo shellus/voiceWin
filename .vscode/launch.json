@@ -1,0 +1,31 @@
+{
+    "version": "0.2.0",
+    "configurations": [
+
+        {
+            "name": "启动",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/main.go",
+            "args": [],
+            "showLog": true
+        },
+        {
+            "name": "测试当前包",
+            "type": "go",
+            "request": "launch",
+            "mode": "test",
+            "program": "${fileDirname}",
+            "showLog": true
+        },
+        {
+            "name": "运行Go程序",
+            "type": "shell",
+            "command": "go run main.go",
+            "presentation": {
+                "reveal": "always",
+            }
+        }
+    ]
+}

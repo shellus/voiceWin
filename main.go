@@ -1,41 +1,28 @@
 package main
 
 import (
-	"flag"
 	"fmt"
 	"log"
 	"os"
 	"os/signal"
-	"syscall"
 
 	"github.com/joho/godotenv"
+	"github.com/shellus/voiceWin/internal/capture"
 	"github.com/shellus/voiceWin/internal/recognition"
 )
 
-var (
-	isDebugging bool
-)
-
-func init() {
-	// 设置命令行参数
-	flag.BoolVar(&isDebugging, "debug", false, "启用调试模式")
-	flag.BoolVar(&isDebugging, "d", false, "启用调试模式（简写）")
-
-	// 解析命令行参数
-	flag.Parse()
-
-	// 加载 .env 文件
+func main() {
+	// 加载环境变量
 	if err := godotenv.Load(); err != nil {
 		log.Printf("警告: 未能加载 .env 文件: %v", err)
 	}
-}
 
-// 主程序逻辑
-func startVoiceWin() {
-	fmt.Println("启动 voiceWin...")
-	fmt.Println("按 Ctrl+C 退出程序")
+	// 创建音频捕获器
+	audioCapture := capture.NewAudioCapture()
 
-	// 创建简单的配置
+	defer audioCapture.Close()
+
+	// 创建阿里云配置
 	aliyunCfg := &recognition.AliyunConfig{
 		AccessKeyID:     os.Getenv("ALIYUN_ACCESS_KEY_ID"),
 		AccessKeySecret: os.Getenv("ALIYUN_ACCESS_KEY_SECRET"),
@@ -59,8 +46,31 @@ func startVoiceWin() {
 	}
 	defer aliyunClient.Close()
 
-	// 创建键盘输入器
-	keyboardInput := input.NewKeyboardInput()
+	// 启动语音识别
+	if err := aliyunClient.StartRecognition(); err != nil {
+		log.Fatalf("启动语音识别失败: %v", err)
+	}
+
+	audioCapture.OnVolumeChange = func(volume float64) {
+		fmt.Printf("\r音量: %f", volume)
+	}
+	audioCapture.OnAudioData = func() {
+		pcmData := audioCapture.GetPCMData()
+		if len(pcmData) == 0 {
+			// 当audioCapture.Start()后，采集器触发了回调，应该20ms收到一次采集数据的
+			log.Fatalf("音频数据为空")
+		}
+		if err := aliyunClient.SendAudioData(pcmData); err != nil {
+			log.Printf("发送音频数据失败: %v", err)
+		}
+	}
+
+	// 启动音频捕获
+	if err := audioCapture.Start(); err != nil {
+		log.Fatalf("启动音频捕获失败: %v", err)
+	}
+
+	fmt.Println("开始录音...按 Ctrl+C 停止")
 
 	// 创建通道用于接收识别结果
 	resultChan := aliyunClient.GetResultChannel()
@@ -71,49 +81,22 @@ func startVoiceWin() {
 		for {
 			select {
 			case result := <-resultChan:
-				// 将识别结果输入到当前活动窗口
-				fmt.Printf("识别结果: %s\n", result)
-				keyboardInput.TypeText(result)
+				fmt.Printf("\n识别结果: %s\n", result)
 			case err := <-errorChan:
-				log.Printf("错误: %v", err)
+				log.Printf("\n错误: %v\n", err)
 			}
 		}
 	}()
 
-	// 模拟按下快捷键启动识别
-	fmt.Println("模拟按下Alt+V启动识别...")
-	startRecognition(aliyunClient)
+	// 等待中断信号
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	<-signalChan
 
-	// 等待退出信号
-	sigChan := make(chan os.Signal, 1)
-	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
+	fmt.Println("\n正在关闭程序...")
 
-	fmt.Println("\n正在关闭 voiceWin...")
-	stopRecognition(aliyunClient)
-}
-
-// 启动语音识别
-func startRecognition(aliyunClient *recognition.AliyunClient) {
-	// 启动语音识别
-	if err := aliyunClient.StartRecognition(); err != nil {
-		log.Printf("启动语音识别失败: %v", err)
-		return
-	}
-
-	fmt.Println("语音识别已启动，请开始说话...")
-}
-
-// 停止语音识别
-func stopRecognition(aliyunClient *recognition.AliyunClient) {
 	// 停止语音识别
 	if err := aliyunClient.StopRecognition(); err != nil {
 		log.Printf("停止语音识别失败: %v", err)
 	}
-
-	fmt.Println("语音识别已停止")
-}
-
-func main() {
-	startVoiceWin()
 }
