@@ -31,7 +31,10 @@ func TestAliyunClient(t *testing.T) {
 	}
 
 	// 创建客户端
-	client := NewAliyunClient(config, DefaultStartParam())
+	client, err := NewAliyunClient(config, DefaultStartParam())
+	if err != nil {
+		t.Fatalf("创建客户端失败: %v", err)
+	}
 
 	// 开始识别
 	err = client.StartRecognition()
@@ -53,12 +56,16 @@ func TestAliyunClient(t *testing.T) {
 	// 在另一个 goroutine 中处理结果
 	go func() {
 		resultChan := client.GetResultChannel()
+		completeChan := client.GetCompleteChannel()
 		errorChan := client.GetErrorChannel()
 
 		for {
 			select {
 			case result := <-resultChan:
-				t.Logf("收到识别结果: %s", result)
+				t.Logf("收到中间结果: %s", result)
+				allResults = append(allResults, result)
+			case result := <-completeChan:
+				t.Logf("收到识别完成结果: %s", result)
 				lastResult = result
 				allResults = append(allResults, result)
 			case err := <-errorChan:
