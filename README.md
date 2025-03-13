@@ -37,6 +37,9 @@ voiceWin 是一个基于阿里云语音识别服务的 Windows 语音转文字�
    - ALIYUN_APP_KEY
    - ALIYUN_REGION
 
+文档：https://help.aliyun.com/zh/isi/product-overview/billing-10?spm=a2c4g.11186623.0.0.563068354s54pf
+> 价格：试用3个月免费，然后3.5元/千次
+
 ## 开发计划
 
 1. 实现多次连续识别功能
