@@ -51,3 +51,18 @@ voiceWin 是一个基于阿里云语音识别服务的 Windows 语音转文字�
 ## 项目状态
 
 目前项目处于早期开发阶段，已完成基础的音频采集和语音识别功能。后续将继续开发更多功能，欢迎贡献代码或提出建议。 
+
+## CGO依赖
+malgo 需要CGO编译，如果没有gcc请使用scoop安装gcc，然后再安装或修复go，否则会报错
+```shell
+$ go build -o voiceWin.exe main.go
+# github.com/shellus/voiceWin/internal/capture
+internal\capture\capture.go:14:24: undefined: malgo.AllocatedContext
+internal\capture\capture.go:15:24: undefined: malgo.Device
+internal\capture\capture.go:29:24: undefined: malgo.InitContext
+internal\capture\capture.go:29:47: undefined: malgo.ContextConfig
+internal\capture\capture.go:43:24: undefined: malgo.DefaultDeviceConfig
+internal\capture\capture.go:68:23: undefined: malgo.InitDevice
+internal\capture\capture.go:68:74: undefined: malgo.DeviceCallbacks
+
+```
